@@ -1,0 +1,11 @@
+[project]
+name = "detect-holds"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "modal>=0.74.4",
+    "pyyaml>=6.0.2",
+    "roboflow>=1.1.61",
+]
