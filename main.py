@@ -86,6 +86,36 @@ def download_dataset(config: DataSetConfig):
     )
 
 
+@app.function(
+    secrets=[
+        modal.Secret.from_name("roboflow-api-key", required_keys=["ROBOFLOW_API_KEY"])
+    ]
+)
+def push_weights_to_roboflow(config: DataSetConfig):
+    import os
+
+    from roboflow import Roboflow
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    rf = Roboflow(api_key=os.getenv("ROBOFLOW_API_KEY"))
+    workspace = rf.workspace(config.workspace_id)
+    # versionless
+    workspace.deploy_model(
+        model_type="yolov11",
+        model_path=str(volume_path / "runs" / config.id / f"{today}"),
+        project_ids=[config.project_id],
+        model_name="climbing-holds-yolo11-seg",
+        filename="weights/best.pt",
+    )
+    # versioned
+    version = workspace.project(config.project_id).version(config.version)
+    version.deploy(
+        model_type="yolov11",
+        model_path=str(volume_path / "runs" / config.id / f"{today}"),
+        filename="weights/best.pt",
+    )
+
+
 MINUTES = 60
 TRAIN_GPU_COUNT = 1
 TRAIN_GPU = f"A100:{TRAIN_GPU_COUNT}"
@@ -157,12 +187,17 @@ class Inference:
 
 
 @app.local_entrypoint()
-def main(quick_check: bool = True, inference_only: bool = False):
+def main(
+    quick_check: bool = True,
+    inference_only: bool = False,
+    push_weights: bool = False,
+):
     """Run fine tuning and inference on two datasets.
 
     Args:
         quick_check: fine-tune on a small subset. Lower quality results, but fast iteration.
         inference_only: skip fine-tuning and only run inference.
+        push_weights: push trained weights to Roboflow to assist in labelling more training examples.
     """
 
     holds = DataSetConfig(
@@ -181,6 +216,8 @@ def main(quick_check: bool = True, inference_only: bool = False):
 
     if not inference_only:
         train.for_each(model_ids, datasets, kwargs={"quick_check": quick_check})
+        if push_weights:
+            push_weights_to_roboflow.for_each(datasets)
 
     for model_id, dataset in zip(model_ids, datasets):
         inference = Inference(
